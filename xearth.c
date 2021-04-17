@@ -61,6 +61,7 @@ extern int errno;
 #define ModeJPEG (4)
 #define ModeBMP  (5)
 #define ModeTest (6)
+#define ModeW    (7)
 
 /* tokens in specifiers are delimited by spaces, tabs, commas, and
  * forward slashes
@@ -138,11 +139,15 @@ int main(argc, argv)
   progname = argv[0];
 
   if (using_x(argc, argv))
-#ifdef HAVE_X11
+  {
+#if defined HAVE_WAYLAND
+    command_line_w(argc, argv);
+#elif defined HAVE_X11
     command_line_x(argc, argv);
 #else
     usage("x11 display mode not supported in this build");
 #endif
+  }
   else
   {
     command_line(argc, argv);
@@ -242,6 +247,13 @@ void output()
   case ModeX:
     if ((!do_fork) || (fork() == 0))
       x11_output();
+    break;
+#endif
+
+#ifdef HAVE_WAYLAND
+  case ModeW:
+    if ((!do_fork) || (fork() == 0))
+      wayland_output();
     break;
 #endif
 
@@ -479,7 +491,11 @@ int using_x(argc, argv)
  */
 void set_defaults()
 {
+#if defined HAVE_WAYLAND
+  output_mode      = ModeW;
+#else
   output_mode      = ModeX;
+#endif
   proj_type        = ProjTypeOrthographic;
   view_pos_type    = ViewPosTypeSun;
   sun_rel_lat      = 0;

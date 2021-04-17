@@ -2,3 +2,4 @@
 fon2inc
 xearth
 *.core
+*-client-protocol.*

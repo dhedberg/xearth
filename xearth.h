@@ -48,10 +48,9 @@
 
 #ifdef HAVE_X11
 #include <X11/Xos.h>
-#else
+#endif
 typedef unsigned char u_char;
 typedef unsigned short u_short;
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -313,6 +312,13 @@ extern void   moon_position _P((time_t, double *, double *));
 /* x11.c */
 extern void command_line_x _P((int, char *[]));
 extern void x11_output _P((void));
+
+/* shm.c */
+extern int allocate_shm_file _P((size_t));
+
+/* wayland.c */
+extern void command_line_w _P((int, char *[]));
+extern void wayland_output _P((void));
 
 /* xearth.c */
 extern char  *progname;
