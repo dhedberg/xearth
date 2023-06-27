@@ -8,7 +8,16 @@ It was a somewhat reasonable excuse to try out some wayland programming.
 
 **Can I actually use it as my background?**
 
-Probably not, it would need support for something like wlr_layer_shell.
+Yes, if your compositor supports the unstable
+[wlr-layer-shell](https://wayland.app/protocols/wlr-layer-shell-unstable-v1)
+protocol you should be able to render to the background by passing `-root`,
+
+```bash
+./xearth -root
+```
+
+You may need to get rid of any other process already rendering to the
+background, such as swaybg.
 
 **There are no window controls!**
 

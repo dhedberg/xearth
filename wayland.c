@@ -58,6 +58,7 @@
 #include <wayland-client.h>
 #include "xdg-shell-client-protocol.h"
 #include "xdg-decoration-client-protocol.h"
+#include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
 #include "xearth.h"
 
@@ -69,6 +70,7 @@ extern void command_line _P((int, char *[]));
 
 static void initialize_wayland _P((void));
 static void setup_surface _P((void));
+static void update_surface_geometry _P((uint32_t, uint32_t));
 static void reconfigure_buffer _P((void));
 static void render_frame _P((void));
 static int  wayland_row _P((u_char *));
@@ -82,11 +84,15 @@ static void xdg_surface_handle_configure _P((void *, struct xdg_surface *, uint3
 static void xdg_toplevel_handle_close _P((void *, struct xdg_toplevel *));
 static void xdg_toplevel_configure _P((void *, struct xdg_toplevel *, int, int, struct wl_array *));
 static void xdg_wm_base_ping _P((void *, struct xdg_wm_base *, uint32_t));
+static void wlr_layer_surface_configure _P((void *, struct zwlr_layer_surface_v1 *, uint32_t, uint32_t, uint32_t));
+static void wlr_layer_surface_closed _P((void *, struct zwlr_layer_surface_v1 *));
 
 static struct wl_compositor              *compositor;
 static struct wl_shm                     *shm;
 static struct xdg_wm_base                *wm_base;
 static struct zxdg_decoration_manager_v1 *xdg_decoration_manager;
+static struct zwlr_layer_shell_v1        *wlr_layer_shell;
+static struct zwlr_layer_surface_v1      *wlr_layer_surface;
 static struct wl_display                 *display;
 static struct xdg_toplevel               *xdg_toplevel;
 static struct wl_surface                 *surface;
@@ -95,6 +101,7 @@ static struct wl_buffer                  *buffer;
 static uint32_t                          *shm_data;
 static size_t                             shm_data_size;
 
+static int                                use_root;
 static int                                need_redraw;
 static int                                current_row;
 static int                                running;
@@ -115,6 +122,11 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
 
 static const struct xdg_wm_base_listener xdg_wm_base_listener = {
   .ping = xdg_wm_base_ping,
+};
+
+static const struct zwlr_layer_surface_v1_listener wlr_layer_surface_listener = {
+  .configure = wlr_layer_surface_configure,
+  .closed = wlr_layer_surface_closed,
 };
 
 static void global_registry_handler(data, registry, id, interface, version)
@@ -142,6 +154,9 @@ static void global_registry_handler(data, registry, id, interface, version)
     xdg_decoration_manager =
       wl_registry_bind(registry, id,
                        &zxdg_decoration_manager_v1_interface, 1);
+  else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0)
+      wlr_layer_shell = wl_registry_bind(registry,
+                                         id, &zwlr_layer_shell_v1_interface, 1);
 }
 
 static void global_registry_remover(data, registry, id)
@@ -180,15 +195,7 @@ static void xdg_toplevel_configure(data, xdg_toplevel, width, height, states)
      int height;
      struct wl_array *states;
 {
-  if (width && height && (width != wdth || height != hght))
-  {
-    wdth = width;
-    hght = height;
-
-    reconfigure_buffer();
-
-    need_redraw = 1;
-  }
+  update_surface_geometry(width, height);
 }
 
 static void xdg_wm_base_ping(data, xdg_wm_base, serial)
@@ -199,14 +206,41 @@ static void xdg_wm_base_ping(data, xdg_wm_base, serial)
   xdg_wm_base_pong(xdg_wm_base, serial);
 }
 
+static void wlr_layer_surface_configure(data, surface, serial, width, height)
+     void *data;
+     struct zwlr_layer_surface_v1 *surface;
+     uint32_t serial;
+     uint32_t width;
+     uint32_t height;
+{
+  zwlr_layer_surface_v1_ack_configure(surface, serial);
+  update_surface_geometry(width, height);
+}
+
+static void wlr_layer_surface_closed(data, surface)
+     void *data;
+     struct zwlr_layer_surface_v1 *surface;
+{
+  running = 0;
+}
 
 void command_line_w(argc, argv)
      int argc;
      char *argv[];
 {
+  int i;
+
   markerfile = "built-in";
 
   command_line(argc, argv);
+
+  for (i=1; i<argc; i++)
+  {
+    if (strcmp(argv[i], "-root") == 0)
+    {
+      use_root = 1;
+    }
+  }
 
   initialize_wayland();
 
@@ -240,30 +274,73 @@ static void setup_surface()
   if (surface == NULL)
     fatal("Can't create surface");
 
-  xdg_wm_base_add_listener(wm_base, &xdg_wm_base_listener, NULL);
-
-  xdg_surface = xdg_wm_base_get_xdg_surface(wm_base, surface);
-  xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, NULL);
-
-  xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
-  xdg_toplevel_add_listener(xdg_toplevel, &xdg_toplevel_listener, NULL);
-
-  xdg_toplevel_set_title(xdg_toplevel, progname);
-
-  if (xdg_decoration_manager)
+  if (use_root)
   {
-    struct zxdg_toplevel_decoration_v1 *decoration =
-      zxdg_decoration_manager_v1_get_toplevel_decoration(xdg_decoration_manager,
-                                                         xdg_toplevel);
+    if (!wlr_layer_shell)
+      fatal("wlr_layer_shell is missing; cannot render to background\n");
 
-    zxdg_toplevel_decoration_v1_set_mode(decoration,
-                                         ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    wlr_layer_surface = zwlr_layer_shell_v1_get_layer_surface(wlr_layer_shell,
+                                                              surface,
+                                                              NULL,
+                                                              ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
+                                                              "xearth");
+
+    if (!wlr_layer_surface)
+      fatal("wlr_layer_surface is null\n");
+
+    zwlr_layer_surface_v1_set_size(wlr_layer_surface, 0, 0);
+    zwlr_layer_surface_v1_set_anchor(wlr_layer_surface,
+                                     ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP
+                                     | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM
+                                     | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT
+                                     | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(wlr_layer_surface,
+                                                     ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    zwlr_layer_surface_v1_add_listener(wlr_layer_surface,
+                                       &wlr_layer_surface_listener, wlr_layer_surface);
   }
   else
-    warning("xdg_toplevel_decoration not supported");
+  {
+    xdg_wm_base_add_listener(wm_base, &xdg_wm_base_listener, NULL);
+
+    xdg_surface = xdg_wm_base_get_xdg_surface(wm_base, surface);
+    xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, NULL);
+
+    xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
+    xdg_toplevel_add_listener(xdg_toplevel, &xdg_toplevel_listener, NULL);
+
+    xdg_toplevel_set_title(xdg_toplevel, progname);
+
+    if (xdg_decoration_manager)
+    {
+      struct zxdg_toplevel_decoration_v1 *decoration =
+        zxdg_decoration_manager_v1_get_toplevel_decoration(xdg_decoration_manager,
+                                                           xdg_toplevel);
+
+      zxdg_toplevel_decoration_v1_set_mode(decoration,
+                                           ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    }
+    else
+      warning("xdg_toplevel_decoration not supported");
+  }
 
   wl_surface_commit(surface);
   wl_display_roundtrip(display);
+}
+
+static void update_surface_geometry(width, height)
+     uint32_t width;
+     uint32_t height;
+{
+  if (width && height && (width != wdth || height != hght))
+  {
+    wdth = width;
+    hght = height;
+
+    reconfigure_buffer();
+
+    need_redraw = 1;
+  }
 }
 
 static void reconfigure_buffer()

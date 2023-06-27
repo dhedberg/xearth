@@ -65,7 +65,8 @@ OBJS    += resources.o x11.o
 endif
 
 ifdef HAVE_WAYLAND
-WOBJS    = wayland.o shm.o xdg-decoration-client-protocol.o xdg-shell-client-protocol.o
+WOBJS    = wayland.o shm.o xdg-decoration-client-protocol.o xdg-shell-client-protocol.o \
+      wlr-layer-shell-unstable-v1-client-protocol.o
 OBJS    += $(WOBJS)
 
 $(WOBJS): CFLAGS := $(filter-out -ansi,$(CFLAGS))
@@ -97,7 +98,8 @@ font.inc: fon2inc fixed.fon
 	./fon2inc fixed.fon >font.inc
 clean:
 	/bin/rm -f $(PROG) $(OBJS) fon2inc font.inc \
-        xdg-shell-client-protocol.[ch] xdg-decoration-client-protocol.[ch]
+        xdg-shell-client-protocol.[ch] xdg-decoration-client-protocol.[ch] \
+        wlr-layer-shell-unstable-v1-client-protocol.[ch]
 
 tarfile:
 	tar cvf $(TARFILE) $(DIST)
@@ -106,6 +108,7 @@ ifdef HAVE_WAYLAND
 WAYLAND_PROTOS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 XDG_DECORATION_PROTO=$(WAYLAND_PROTOS)/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml
 XDG_SHELL_PROTO=$(WAYLAND_PROTOS)/stable/xdg-shell/xdg-shell.xml
+WLR_LAYER_SHELL_PROTO=./wlr-layer-shell-unstable-v1.xml
 
 xdg-decoration-client-protocol.c:
 	wayland-scanner private-code $(XDG_DECORATION_PROTO) $@
@@ -117,5 +120,11 @@ xdg-shell-client-protocol.c:
 xdg-shell-client-protocol.h:
 	wayland-scanner client-header $(XDG_SHELL_PROTO) $@
 
-wayland.o: xdg-shell-client-protocol.h xdg-decoration-client-protocol.h
+wlr-layer-shell-unstable-v1-client-protocol.c:
+	wayland-scanner private-code $(WLR_LAYER_SHELL_PROTO) $@
+wlr-layer-shell-unstable-v1-client-protocol.h:
+	wayland-scanner client-header $(WLR_LAYER_SHELL_PROTO) $@
+
+wayland.o: xdg-shell-client-protocol.h xdg-decoration-client-protocol.h \
+	wlr-layer-shell-unstable-v1-client-protocol.h
 endif

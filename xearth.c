@@ -776,7 +776,9 @@ void command_line(argc, argv)
     }
     else if (strcmp(argv[i], "-root") == 0)
     {
-      warning("-root not relevant for GIF or PPM output");
+      /* Ugly hack: we lazily reuse this function in wayland.c */
+      if (!using_x(argc, argv))
+        warning("-root not relevant for GIF or PPM output");
     }
     else if (strcmp(argv[i], "-noroot") == 0)
     {
