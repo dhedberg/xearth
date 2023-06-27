@@ -34,4 +34,7 @@ cp Makefile.DIST Makefile
 HAVE_WAYLAND=1 make
 ```
 
-It will probably only compile on linux (uses of timerfd)
+The included Dockerfiles contains the necessary dependencies and steps
+for ubuntu and fedora.
+
+It will probably only compile on linux (uses timerfd).

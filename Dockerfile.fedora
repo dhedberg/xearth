@@ -1,0 +1,15 @@
+FROM fedora:38
+
+RUN dnf install -y \
+    make \
+    gcc \
+    wayland-devel \
+    wayland-protocols-devel \
+    cairo-devel \
+    gd-devel
+
+WORKDIR /build
+COPY . .
+
+ENV HAVE_WAYLAND=1
+RUN cp Makefile.DIST Makefile && make -j && cp xearth /target/
