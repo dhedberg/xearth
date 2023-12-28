@@ -1,4 +1,4 @@
-FROM ubuntu:23.04
+FROM ubuntu:23.10
 
 RUN apt update && apt install -y \
     make \
@@ -12,4 +12,5 @@ WORKDIR /build
 COPY . .
 
 ENV HAVE_WAYLAND=1
-RUN cp Makefile.DIST Makefile && make -j && cp xearth /target/
+RUN cp Makefile.DIST Makefile && make -j \
+    && mkdir -p /target && cp xearth /target/
